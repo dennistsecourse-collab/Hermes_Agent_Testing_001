@@ -1,7 +1,13 @@
 # Build & deploy the static Todo app to GitHub Pages.
-# Model: classic "Deploy from a branch" — the built site/ is published to a
-# `gh-pages` branch, which GitHub Pages serves. Self-contained: no
+#
+# Model: "Deploy from a branch" (gh-pages). The workflow builds the site/ dir
+# and publishes it to the `gh-pages` branch; GitHub Pages serves that branch.
+# Uses ONLY official `actions/*` + git built-ins — no third-party marketplace
+# actions (which the hosted runner may be unable to resolve), and no
 # actions/configure-pages (which 404s until a Pages site exists).
+#
+# Prerequisite (one-time, UI): Settings → Pages → Source "Deploy from a
+# branch" → branch `gh-pages`, root (/). See the final message to the user.
 name: Build and Deploy to GitHub Pages
 
 on:
@@ -10,7 +16,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write   # needed to push the gh-pages branch from the workflow
+  contents: write
 
 concurrency:
   group: gh-pages
@@ -29,15 +35,21 @@ jobs:
           # self-contained single-file app: index.html is the whole site
           mkdir -p site
           cp index.html site/index.html
-          # 404 fallback so sub-paths don't break the app
-          cp site/index.html site/404.html
+          cp index.html site/404.html   # SPA-ish fallback so any path still loads
           echo "Deploying: $(ls site | tr '\n' ' ')"
 
-      - name: Deploy to gh-pages branch
-        uses: JamesIves/gh-pages-deploy-action@v1
-        with:
-          branch: gh-pages
-          folder: site
-          clean: true
+      - name: Publish to gh-pages branch
+        run: |
+          set -euo pipefail
+          git config user.name  "deploy[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # move the built site/ onto an orphan gh-pages branch and force-push
+          git checkout --orphan gh-pages
+          git rm -rf --quiet . 2>/dev/null || true
+          cp -r site/. .
+          git add -A
+          git commit -m "pages: deploy $(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
+                    || git commit --allow-empty -m "pages: no changes"
+          git push --force origin gh-pages
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
