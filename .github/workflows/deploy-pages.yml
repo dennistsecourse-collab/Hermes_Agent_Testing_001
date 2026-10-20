@@ -1,60 +1,43 @@
-# Build and deploy the static Todo app to GitHub Pages.
-# Triggered on every push to `main` and on manual dispatch.
-# - Build job: assembles the deployable site/ artifact (here a self-contained
-#   index.html; swap in a real bundler step later if the app grows).
-# - Deploy job: pushes the artifact to GitHub Pages via the standard
-#   actions/deploy-pages + environment (recommended, replaces the old
-#   `pjax`/`aws` workflow).
+# Build & deploy the static Todo app to GitHub Pages.
+# Model: classic "Deploy from a branch" — the built site/ is published to a
+# `gh-pages` branch, which GitHub Pages serves. Self-contained: no
+# actions/configure-pages (which 404s until a Pages site exists).
 name: Build and Deploy to GitHub Pages
 
 on:
   push:
     branches: [ main ]
-  # Allow manual runs from the Actions tab
   workflow_dispatch:
 
-# Pages requires these permissions on the GITHUB_TOKEN.
 permissions:
-  contents: write
-  pages: write
-  id-token: write
+  contents: write   # needed to push the gh-pages branch from the workflow
 
-# Only one deploy in flight; a newer push supersedes an in-progress one.
 concurrency:
-  group: pages
+  group: gh-pages
   cancel-in-progress: true
 
 jobs:
-  build:
+  build-deploy:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Pages
-        uses: actions/configure-pages@v5
-        id: pages
-
       - name: Build site
         run: |
           set -euo pipefail
+          # self-contained single-file app: index.html is the whole site
           mkdir -p site
-          # Self-contained app: ship index.html as the entry point.
           cp index.html site/index.html
-          echo "Deploy target: site/ ($(ls site | tr '\n' ' '))"
+          # 404 fallback so sub-paths don't break the app
+          cp site/index.html site/404.html
+          echo "Deploying: $(ls site | tr '\n' ' ')"
 
-      - name: Upload artifact to Pages
-        uses: actions/upload-pages-artifact@v3
+      - name: Deploy to gh-pages branch
+        uses: JamesIves/gh-pages-deploy-action@v1
         with:
-          path: site
-
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+          branch: gh-pages
+          folder: site
+          clean: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
