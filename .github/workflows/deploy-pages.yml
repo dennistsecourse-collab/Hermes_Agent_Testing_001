@@ -1,55 +1,64 @@
-# Build & deploy the static Todo app to GitHub Pages.
+# Deploy the static Todo app to GitHub Pages.
 #
-# Model: "Deploy from a branch" (gh-pages). The workflow builds the site/ dir
-# and publishes it to the `gh-pages` branch; GitHub Pages serves that branch.
-# Uses ONLY official `actions/*` + git built-ins — no third-party marketplace
-# actions (which the hosted runner may be unable to resolve), and no
-# actions/configure-pages (which 404s until a Pages site exists).
+# Model: "Deploy from GitHub Actions" (the official artifact pipeline that
+# GitHub scaffolds when you pick GitHub Actions as the Pages source).
+#   build  : checkout -> configure-pages -> build into docs/ -> upload artifact
+#   deploy : actions/deploy-pages publishes the artifact to the Pages site.
 #
-# Prerequisite (one-time, UI): Settings → Pages → Source "Deploy from a
-# branch" → branch `gh-pages`, root (/). See the final message to the user.
-name: Build and Deploy to GitHub Pages
+# Uses only official actions/* — no third-party marketplace actions, no manual
+# branch pushes. GITHUB_TOKEN carries the `pages`/`id-token` write permissions
+# set below, so the deploy works even where the contributor's PAT lacks access.
+name: Deploy to GitHub Pages
 
 on:
   push:
     branches: [ main ]
+  # Allow manual runs from the Actions tab
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
+  pages: write
+  id-token: write
 
 concurrency:
-  group: gh-pages
-  cancel-in-progress: true
+  group: pages
+  cancel-in-progress: false
 
 jobs:
-  build-deploy:
+  build:
     runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Build site
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Build
         run: |
           set -euo pipefail
           # self-contained single-file app: index.html is the whole site
-          mkdir -p site
-          cp index.html site/index.html
-          cp index.html site/404.html   # SPA-ish fallback so any path still loads
-          echo "Deploying: $(ls site | tr '\n' ' ')"
+          mkdir -p docs
+          cp index.html docs/index.html
+          cp index.html docs/404.html   # any path still loads the app
+          echo "Deploying: $(ls docs | tr '\n' ' ')"
 
-      - name: Publish to gh-pages branch
-        run: |
-          set -euo pipefail
-          git config user.name  "deploy[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          # move the built site/ onto an orphan gh-pages branch and force-push
-          git checkout --orphan gh-pages
-          git rm -rf --quiet . 2>/dev/null || true
-          cp -r site/. .
-          git add -A
-          git commit -m "pages: deploy $(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
-                    || git commit --allow-empty -m "pages: no changes"
-          git push --force origin gh-pages
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4
